@@ -527,6 +527,9 @@ export type GetVersionedBlockConfig = {
   commitment?: Finality;
   /** The max transaction version to return in responses. If the requested transaction is a higher version, an error will be returned */
   maxSupportedTransactionVersion?: number;
+  /** "signatures" and "none" are currently not supported */
+  transactionDetails?: 'full' | 'accounts';
+  rewards?: boolean;
 };
 
 /**
@@ -1223,7 +1226,7 @@ export type VersionedBlockResponse = {
     /** The transaction */
     transaction: {
       /** The transaction message */
-      message: VersionedMessage;
+      message?: VersionedMessage;
       /** The transaction signatures */
       signatures: string[];
     };
@@ -1959,25 +1962,27 @@ const AddressTableLookupStruct = pick({
   readonlyIndexes: array(number()),
 });
 
+const messageType = pick({
+  accountKeys: array(string()),
+  header: pick({
+    numRequiredSignatures: number(),
+    numReadonlySignedAccounts: number(),
+    numReadonlyUnsignedAccounts: number(),
+  }),
+  instructions: array(
+    pick({
+      accounts: array(number()),
+      data: string(),
+      programIdIndex: number(),
+    }),
+  ),
+  recentBlockhash: string(),
+  addressTableLookups: optional(array(AddressTableLookupStruct)),
+});
+
 const ConfirmedTransactionResult = pick({
   signatures: array(string()),
-  message: pick({
-    accountKeys: array(string()),
-    header: pick({
-      numRequiredSignatures: number(),
-      numReadonlySignedAccounts: number(),
-      numReadonlyUnsignedAccounts: number(),
-    }),
-    instructions: array(
-      pick({
-        accounts: array(number()),
-        data: string(),
-        programIdIndex: number(),
-      }),
-    ),
-    recentBlockhash: string(),
-    addressTableLookups: optional(array(AddressTableLookupStruct)),
-  }),
+  message: messageType,
 });
 
 const ParsedInstructionResult = pick({
@@ -2125,7 +2130,10 @@ const GetBlockRpcResult = jsonRpcResult(
       parentSlot: number(),
       transactions: array(
         pick({
-          transaction: ConfirmedTransactionResult,
+          transaction: pick({
+            signatures: array(string()),
+            message: optional(messageType),
+          }),
           meta: nullable(ConfirmedTransactionMetaResult),
           version: optional(TransactionVersionStruct),
         }),
@@ -4301,7 +4309,9 @@ export class Connection {
         meta,
         transaction: {
           ...transaction,
-          message: versionedMessageFromResponse(version, transaction.message),
+          message: transaction.message
+            ? versionedMessageFromResponse(version, transaction.message)
+            : undefined,
         },
         version,
       })),
